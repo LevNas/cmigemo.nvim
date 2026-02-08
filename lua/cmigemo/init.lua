@@ -60,6 +60,51 @@ end
 ---@class CmigemoQueryOpts
 ---@field rxop? "pcre"|"vim"  regex format (default: "pcre")
 
+--- Convert PCRE-style regex to Vim magic mode.
+--- Escapes (, ), | with backslash outside character classes.
+---@param pcre string
+---@return string
+local function pcre_to_vim_magic(pcre)
+  local parts = {}
+  local in_class = false
+  local i = 1
+  while i <= #pcre do
+    local b = pcre:byte(i)
+    if in_class then
+      parts[#parts + 1] = string.char(b)
+      if b == 93 then -- ]
+        in_class = false
+      elseif b == 92 then -- \
+        i = i + 1
+        if i <= #pcre then
+          parts[#parts + 1] = pcre:sub(i, i)
+        end
+      end
+    else
+      if b == 91 then -- [
+        in_class = true
+        parts[#parts + 1] = "["
+      elseif b == 40 then -- (
+        parts[#parts + 1] = "\\("
+      elseif b == 41 then -- )
+        parts[#parts + 1] = "\\)"
+      elseif b == 124 then -- |
+        parts[#parts + 1] = "\\|"
+      elseif b == 92 then -- \
+        parts[#parts + 1] = "\\"
+        i = i + 1
+        if i <= #pcre then
+          parts[#parts + 1] = pcre:sub(i, i)
+        end
+      else
+        parts[#parts + 1] = string.char(b)
+      end
+    end
+    i = i + 1
+  end
+  return table.concat(parts)
+end
+
 --- Query cmigemo for a migemo regex pattern.
 ---@param word string  query word
 ---@param opts? CmigemoQueryOpts
@@ -87,7 +132,20 @@ function M.query(word, opts)
   end
 
   if rxop == "vim" then
-    return "\\v" .. result
+    local vim_pattern = pcre_to_vim_magic(result)
+    if pcall(vim.regex, vim_pattern) then
+      return vim_pattern
+    end
+    -- Full pattern too complex for Vim regex engine.
+    -- Fall back to character class only (matches single characters).
+    local bracket_end = result:find("]", 1, true)
+    if bracket_end and result:sub(1, 2) == "([" then
+      local class_only = result:sub(2, bracket_end)
+      if pcall(vim.regex, class_only) then
+        return class_only
+      end
+    end
+    return nil
   end
 
   return result
