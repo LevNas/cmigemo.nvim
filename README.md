@@ -39,12 +39,12 @@ Convert a romaji/ASCII query into a migemo regex pattern.
 
 ```lua
 -- PCRE format (default) - for ripgrep, etc.
-local pattern = require("cmigemo").query("kensaku")
--- => "(kensaku|けんさく|ケンサク|検索|...)"
+local pattern = require("cmigemo").query("nihongo")
+-- => "(nihongo|にほんご|ニホンゴ|日本語|...)"
 
 -- Vim very magic format - for Vim search, Flash, etc.
 local pattern = require("cmigemo").query("kensaku", { rxop = "vim" })
--- => "\v(kensaku|けんさく|ケンサク|検索|...)"
+-- => "\v(nihongo|にほんご|ニホンゴ|日本語|...)"
 ```
 
 **Parameters:**
@@ -77,45 +77,76 @@ cmigemo.nvim runs `cmigemo -q -d <dict>` as a resident process and communicates 
 
 ### Flash.nvim (Migemo Jump)
 
+Add a keymap that uses cmigemo to convert romaji input into a migemo pattern for Flash's search mode. When cmigemo is unavailable, it falls back to literal search.
+
 ```lua
-require("flash").jump({
-  search = {
-    mode = function(str)
-      if str == "" then return "" end
-      local pattern = require("cmigemo").query(str, { rxop = "vim" })
-      if pattern then return pattern end
-      return "\\V" .. str:gsub("\\", "\\\\")
-    end,
+-- lazy.nvim plugin spec
+{
+  "folke/flash.nvim",
+  keys = {
+    {
+      "F",
+      mode = { "n", "x", "o" },
+      function()
+        require("flash").jump({
+          search = {
+            mode = function(str)
+              if str == "" then return "" end
+              local pattern = require("cmigemo").query(str, { rxop = "vim" })
+              if pattern then return pattern end
+              return "\\V" .. str:gsub("\\", "\\\\")
+            end,
+          },
+        })
+      end,
+      desc = "Flash: Migemo Jump",
+    },
   },
-})
+}
 ```
 
-### Snacks.nvim Picker (Grep with Migemo)
+### Snacks.nvim Picker (Grep Migemo)
+
+Define a custom picker source that transforms the search input through cmigemo before passing it to ripgrep. This enables romaji-to-Japanese grep search.
 
 ```lua
-require("snacks").setup({
-  picker = {
-    sources = {
-      grep_kensaku = {
-        finder = function(opts, ctx)
-          local search = ctx.filter.search
-          if search ~= "" then
-            local pattern = require("cmigemo").query(search)
-            if pattern then
-              ctx.filter.search = pattern
-              local result = require("snacks.picker.source.grep").grep(opts, ctx)
-              ctx.filter.search = search
-              return result
+-- lazy.nvim plugin spec
+{
+  "folke/snacks.nvim",
+  opts = {
+    picker = {
+      sources = {
+        grep_migemo = {
+          finder = function(opts, ctx)
+            local search = ctx.filter.search
+            if search ~= "" then
+              local ok, cmigemo = pcall(require, "cmigemo")
+              if ok then
+                local pattern = cmigemo.query(search)
+                if pattern then
+                  ctx.filter.search = pattern
+                  local result = require("snacks.picker.source.grep").grep(opts, ctx)
+                  ctx.filter.search = search
+                  return result
+                end
+              end
             end
-          end
-          return require("snacks.picker.source.grep").grep(opts, ctx)
-        end,
-        need_search = true,
-        supports_live = true,
+            return require("snacks.picker.source.grep").grep(opts, ctx)
+          end,
+          format = "file",
+          regex = true,
+          show_empty = true,
+          live = true,
+          need_search = true,
+          supports_live = true,
+        },
       },
     },
   },
-})
+  keys = {
+    { "<leader>fK", function() Snacks.picker.grep_migemo() end, desc = "Grep Migemo" },
+  },
+}
 ```
 
 ## License
