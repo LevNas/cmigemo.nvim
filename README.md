@@ -75,29 +75,168 @@ cmigemo.nvim runs `cmigemo -q -d <dict>` as a resident process and communicates 
 
 ## Integration Examples
 
-### Flash.nvim (Migemo Jump)
+### Flash.nvim (Migemo Jump with Custom Loop)
 
-Add a keymap that uses cmigemo to convert romaji input into a migemo pattern for Flash's search mode. When cmigemo is unavailable, it falls back to literal search.
+A custom input loop for flash.nvim that resolves the conflict between label characters and search input in migemo mode.
+
+**Features:**
+- Case-insensitive search (`\c` flag)
+- Search extension takes priority over label jumping — typing a character that extends the search will never accidentally trigger a label jump
+- Labels that would conflict with search extension are automatically hidden
+- Zero-match input is rejected with a visual flash (red)
+- CR with multiple matches is rejected with a visual flash (yellow)
+- Falls back to literal search when cmigemo is unavailable
 
 ```lua
 -- lazy.nvim plugin spec
 {
   "folke/flash.nvim",
+  event = "VeryLazy",
+  opts = {
+    labels = "asdfghjklqwertyuiopzxcvbnm",
+    modes = {
+      char = { enabled = false },
+      search = { enabled = false },
+    },
+    jump = { pos = "start" },
+  },
+  config = function(_, opts)
+    require("flash").setup(opts)
+    vim.api.nvim_set_hl(0, "FlashNoMatch", { bg = "#4c1c1c", default = true })
+    vim.api.nvim_set_hl(0, "FlashMultiLabel", { bg = "#3b3514", default = true })
+  end,
   keys = {
     {
-      "F",
+      "f",
       mode = { "n", "x", "o" },
       function()
-        require("flash").jump({
-          search = {
-            mode = function(str)
-              if str == "" then return "" end
-              local pattern = require("cmigemo").query(str, { rxop = "vim" })
-              if pattern then return pattern end
-              return "\\V" .. str:gsub("\\", "\\\\")
-            end,
-          },
+        local State = require("flash.state")
+        local Prompt = require("flash.prompt")
+        local Util = require("flash.util")
+
+        local function flash_screen(hl_group, duration_ms)
+          local ns = vim.api.nvim_create_namespace("flash_migemo_effect")
+          for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            local ok, info = pcall(vim.fn.getwininfo, win)
+            if ok and info[1] then
+              for line = info[1].topline, info[1].botline do
+                pcall(vim.api.nvim_buf_set_extmark, buf, ns, line - 1, 0, {
+                  hl_eol = true,
+                  line_hl_group = hl_group,
+                  priority = 10000,
+                })
+              end
+            end
+          end
+          vim.cmd("redraw")
+          vim.wait(duration_ms or 80, function() return false end)
+          for _, b in ipairs(vim.api.nvim_list_bufs()) do
+            pcall(vim.api.nvim_buf_clear_namespace, b, ns, 0, -1)
+          end
+          vim.cmd("redraw")
+        end
+
+        -- search_pattern: migemo regex with \c for case-insensitive
+        -- skip_pattern: literal ASCII only (prevents Japanese matches
+        --   from excluding unrelated label characters)
+        local function migemo_mode(str)
+          if str == "" then return "" end
+          local skip = "\\V\\c" .. str:gsub("\\", "\\\\")
+          local ok, cmigemo = pcall(require, "cmigemo")
+          if ok then
+            local pattern = cmigemo.query(str, { rxop = "vim" })
+            if pattern then return "\\c" .. pattern, skip end
+          end
+          return skip
+        end
+
+        local state = State.new({
+          search = { mode = migemo_mode },
+          jump = { pos = "start" },
         })
+
+        -- Wrap labeler: hide labels whose character would extend the search
+        local orig_labeler = state.labeler
+        local lbl_cache_pat, lbl_cache_rm = nil, {}
+
+        state.labeler = function(matches, s)
+          orig_labeler(matches, s)
+          local cur = s.pattern()
+          if cur == "" then return end
+          if cur ~= lbl_cache_pat then
+            lbl_cache_pat = cur
+            lbl_cache_rm = {}
+            local checked = {}
+            for _, m in ipairs(matches) do
+              local c = m.label
+              if c and not checked[c] then
+                checked[c] = true
+                local tp = migemo_mode(cur .. c)
+                if tp ~= "" then
+                  for _, win in ipairs(s.wins) do
+                    local found = 0
+                    pcall(vim.api.nvim_win_call, win, function()
+                      found = vim.fn.search(tp, "cnw")
+                    end)
+                    if found > 0 then
+                      lbl_cache_rm[c] = true
+                      break
+                    end
+                  end
+                end
+              end
+            end
+          end
+          if next(lbl_cache_rm) then
+            for _, m in ipairs(matches) do
+              if m.label and lbl_cache_rm[m.label] then m.label = nil end
+            end
+          end
+        end
+
+        state:update({ force = true })
+
+        while true do
+          Prompt.set(state.pattern(), state.opts.prompt.enabled)
+          local c = state:get_char()
+
+          if c == nil then
+            vim.api.nvim_input("<esc>")
+            state:restore()
+            break
+          elseif c == Util.CR then
+            if #state.results <= 1 then
+              state:jump()
+              break
+            else
+              flash_screen("FlashMultiLabel", 80)
+            end
+          elseif c == Util.BS then
+            state:update({ pattern = state.pattern:extend(c), check_jump = false })
+          else
+            local new_pattern = state.pattern:extend(c)
+            local orig = state.pattern()
+
+            -- Try search extension first (priority over label jump)
+            state:update({ pattern = new_pattern, check_jump = false })
+
+            if #state.results > 0 then
+              if #state.results == 1 and state.opts.jump.autojump then
+                state:jump()
+                break
+              end
+            elseif not state.pattern:empty() then
+              -- Zero matches: revert pattern, then try label jump
+              state:update({ pattern = orig, check_jump = false })
+              if state:check_jump(new_pattern) then break end
+              flash_screen("FlashNoMatch", 80)
+            end
+          end
+        end
+
+        state:hide()
+        Prompt.hide()
       end,
       desc = "Flash: Migemo Jump",
     },
