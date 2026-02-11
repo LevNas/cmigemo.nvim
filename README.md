@@ -244,6 +244,95 @@ A custom input loop for flash.nvim that resolves the conflict between label char
 }
 ```
 
+### Flash.nvim (`/` Search with Migemo)
+
+Overlay migemo match highlights during Vim's native `/` and `?` search. On `<CR>`, the cmdline is replaced with the migemo pattern so that `n`/`N` navigation works with Japanese matches.
+
+Requires flash.nvim to be loaded (e.g. via `VeryLazy` event or `keys`).
+
+```lua
+-- Place in your Neovim config (e.g. after flash.nvim setup)
+local function setup_migemo_search()
+  local State = require("flash.state")
+  local migemo_search_state = nil
+  local group = vim.api.nvim_create_augroup("flash_migemo_search", { clear = true })
+
+  local function migemo_mode(str)
+    if str == "" then return "" end
+    local skip = "\\V\\c" .. str:gsub("\\", "\\\\")
+    local ok, cmigemo = pcall(require, "cmigemo")
+    if ok then
+      local pattern = cmigemo.query(str, { rxop = "vim" })
+      if pattern then return "\\c" .. pattern, skip end
+    end
+    return skip
+  end
+
+  vim.api.nvim_create_autocmd("CmdlineEnter", {
+    group = group,
+    callback = function()
+      local t = vim.fn.getcmdtype()
+      if t ~= "/" and t ~= "?" then return end
+
+      migemo_search_state = State.new({
+        search = {
+          forward = t == "/",
+          mode = migemo_mode,
+          incremental = true,
+        },
+        highlight = { backdrop = false },
+      })
+
+      -- Replace cmdline with migemo pattern before submit
+      vim.keymap.set("c", "<CR>", function()
+        local raw = vim.fn.getcmdline()
+        if raw ~= "" and migemo_search_state then
+          local pat = migemo_mode(raw)
+          if pat ~= "" then
+            vim.fn.setcmdline(pat)
+          end
+        end
+        vim.api.nvim_feedkeys(
+          vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n", true
+        )
+      end)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("CmdlineChanged", {
+    group = group,
+    callback = function()
+      if not migemo_search_state then return end
+      local pattern = vim.fn.getcmdline()
+      local t = vim.fn.getcmdtype()
+      if pattern:sub(1, 1) == t then
+        pattern = vim.fn.getreg("/") .. pattern:sub(2)
+      end
+      migemo_search_state:update({ pattern = pattern, check_jump = false })
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("CmdlineLeave", {
+    group = group,
+    callback = function()
+      pcall(vim.keymap.del, "c", "<CR>")
+      if migemo_search_state then
+        migemo_search_state:hide()
+        migemo_search_state = nil
+      end
+    end,
+  })
+end
+
+-- Call after flash.nvim is loaded
+-- e.g. in flash.nvim's config function:
+--   config = function(_, opts)
+--     require("flash").setup(opts)
+--     setup_migemo_search()
+--   end,
+setup_migemo_search()
+```
+
 ### Snacks.nvim Picker (Grep Migemo)
 
 Define a custom picker source that transforms the search input through cmigemo before passing it to ripgrep. This enables romaji-to-Japanese grep search.
