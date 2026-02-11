@@ -142,13 +142,23 @@ A custom input loop for flash.nvim that resolves the conflict between label char
         --   from excluding unrelated label characters)
         local function migemo_mode(str)
           if str == "" then return "" end
-          local skip = "\\V\\c" .. str:gsub("\\", "\\\\")
+          local skip = "\\V" .. str:gsub("\\", "\\\\")
           local ok, cmigemo = pcall(require, "cmigemo")
           if ok then
             local pattern = cmigemo.query(str, { rxop = "vim" })
-            if pattern then return "\\c" .. pattern, skip end
+            if pattern then
+              -- cmigemo may return a character class [kanji] as fallback when
+              -- the full pattern is too complex for Vim regex. Character classes
+              -- only match single characters, so multi-char ASCII input (e.g. "re")
+              -- won't match. Always include literal input as an alternative.
+              local search = "\\c\\(" .. pattern .. "\\|" .. str .. "\\)"
+              if pcall(vim.regex, search) then
+                return search, skip
+              end
+              return "\\c" .. pattern, skip
+            end
           end
-          return skip
+          return "\\V\\c" .. str:gsub("\\", "\\\\"), skip
         end
 
         local state = State.new({
@@ -259,13 +269,19 @@ local function setup_migemo_search()
 
   local function migemo_mode(str)
     if str == "" then return "" end
-    local skip = "\\V\\c" .. str:gsub("\\", "\\\\")
+    local skip = "\\V" .. str:gsub("\\", "\\\\")
     local ok, cmigemo = pcall(require, "cmigemo")
     if ok then
       local pattern = cmigemo.query(str, { rxop = "vim" })
-      if pattern then return "\\c" .. pattern, skip end
+      if pattern then
+        local search = "\\c\\(" .. pattern .. "\\|" .. str .. "\\)"
+        if pcall(vim.regex, search) then
+          return search, skip
+        end
+        return "\\c" .. pattern, skip
+      end
     end
-    return skip
+    return "\\V\\c" .. str:gsub("\\", "\\\\"), skip
   end
 
   vim.api.nvim_create_autocmd("CmdlineEnter", {
