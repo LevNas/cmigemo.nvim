@@ -67,6 +67,22 @@ Stop the resident cmigemo process.
 
 cmigemo.nvim runs `cmigemo -q -d <dict>` as a resident process and communicates via stdin/stdout. The process is started lazily on the first `query()` call and automatically stopped on `VimLeavePre`.
 
+```
+lua/cmigemo/
+├── init.lua           -- Core API (setup, query, is_available, stop)
+├── health.lua         -- :checkhealth cmigemo
+├── core/
+│   ├── process.lua    -- Subprocess management (stdin/stdout IPC)
+│   └── dict.lua       -- Dictionary auto-detection
+└── ext/
+    ├── flash.lua      -- flash.nvim integration (migemo jump, bunsetsu jump)
+    ├── snacks.lua     -- snacks.nvim picker integration (grep migemo)
+    └── bunsetsu.lua   -- BudouX phrase segmentation
+examples/
+├── flash.lua          -- lazy.nvim config example for flash.nvim
+└── snacks-picker.lua  -- lazy.nvim config example for snacks.nvim picker
+```
+
 ## Health Check
 
 ```vim
@@ -91,6 +107,7 @@ A custom input loop for flash.nvim that resolves the conflict between label char
 -- lazy.nvim plugin spec
 {
   "folke/flash.nvim",
+  dependencies = { "LevNas/cmigemo.nvim" },
   event = "VeryLazy",
   opts = {
     labels = "asdfghjklqwertyuiopzxcvbnm",
@@ -349,49 +366,39 @@ end
 setup_migemo_search()
 ```
 
+See [`examples/flash.lua`](examples/flash.lua) for a complete lazy.nvim configuration.
+
 ### Snacks.nvim Picker (Grep Migemo)
 
-Define a custom picker source that transforms the search input through cmigemo before passing it to ripgrep. This enables romaji-to-Japanese grep search.
+Use `cmigemo.ext.snacks` as a drop-in replacement for the default grep finder to enable romaji-to-Japanese grep search.
 
 ```lua
 -- lazy.nvim plugin spec
 {
   "folke/snacks.nvim",
+  dependencies = { "LevNas/cmigemo.nvim" },
   opts = {
     picker = {
       sources = {
-        grep_migemo = {
+        grep = {
           finder = function(opts, ctx)
-            local search = ctx.filter.search
-            if search ~= "" then
-              local ok, cmigemo = pcall(require, "cmigemo")
-              if ok then
-                local pattern = cmigemo.query(search)
-                if pattern then
-                  ctx.filter.search = pattern
-                  local result = require("snacks.picker.source.grep").grep(opts, ctx)
-                  ctx.filter.search = search
-                  return result
-                end
-              end
-            end
+            local ok, cmigemo_snacks = pcall(require, "cmigemo.ext.snacks")
+            if ok then return cmigemo_snacks.grep(opts, ctx) end
             return require("snacks.picker.source.grep").grep(opts, ctx)
           end,
-          format = "file",
-          regex = true,
-          show_empty = true,
-          live = true,
-          need_search = true,
-          supports_live = true,
         },
       },
     },
   },
-  keys = {
-    { "<leader>fK", function() Snacks.picker.grep_migemo() end, desc = "Grep Migemo" },
-  },
 }
 ```
+
+See [`examples/snacks-picker.lua`](examples/snacks-picker.lua) for a complete lazy.nvim configuration.
+
+## Acknowledgments
+
+- [cmigemo](https://github.com/koron/cmigemo) by MURAOKA Taro (KoRoN) — the C/Migemo engine that powers this plugin's romaji-to-Japanese pattern conversion
+- [budoux.lua](https://github.com/atusy/budoux.lua) by atusy — Lua port of Google's [BudouX](https://github.com/google/budoux) line break organizer, used for bunsetsu (phrase) segmentation
 
 ## License
 

@@ -22,7 +22,7 @@ function M.check()
   end
 
   -- 2. Check dictionary
-  local dict = require("cmigemo.dict")
+  local dict = require("cmigemo.core.dict")
   local dict_path = dict.detect()
   if dict_path then
     vim.health.ok("Dictionary found: " .. dict_path)
@@ -50,6 +50,14 @@ function M.check()
 
   -- Clean up test process
   cmigemo.stop()
+
+  -- 5. Check budoux.lua (optional)
+  local budoux_ok, bunsetsu = pcall(require, "cmigemo.ext.bunsetsu")
+  if budoux_ok and bunsetsu.is_available() then
+    vim.health.ok("budoux.lua is available (bunsetsu jump enabled)")
+  else
+    vim.health.info("budoux.lua is not installed (bunsetsu jump disabled, optional)")
+  end
 end
 
 return M

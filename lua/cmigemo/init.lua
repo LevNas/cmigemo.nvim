@@ -21,7 +21,7 @@ local setup_done = false
 --- Resolve the dictionary path from config.
 ---@return string|nil
 local function resolve_dict_path()
-  local dict = require("cmigemo.dict")
+  local dict = require("cmigemo.core.dict")
   return dict.detect(config.dict_path)
 end
 
@@ -37,7 +37,7 @@ local function ensure_process()
     return false
   end
 
-  local Process = require("cmigemo.process").Process
+  local Process = require("cmigemo.core.process").Process
   process = Process.new(config.cmigemo_cmd, dict_path)
   return process:start()
 end
