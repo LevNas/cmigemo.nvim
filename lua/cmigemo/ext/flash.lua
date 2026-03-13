@@ -48,46 +48,40 @@ local function flash_reject()
   end, 100)
 end
 
---- Build action handlers for a-z that prioritize search input over label jump.
---- When a letter is typed:
----   1. Try extending the search pattern (without check_jump)
----   2. If matches exist → continue searching
----   3. If no matches → revert and try the char as a label jump
----   4. If neither → flash buffer and reject the input
+--- Build action handlers for a-z.
+--- When labels are visible and the typed char matches a label → jump to label.
+--- Otherwise → extend the search pattern via migemo.
+--- This allows romaji input to flow naturally while labels remain accessible.
 ---@return table<string, fun(state: Flash.State, char: string): boolean?>
 local function romaji_actions()
   local actions = {}
   for b = string.byte("a"), string.byte("z") do
     local c = string.char(b)
     actions[c] = function(state, char)
-      local orig = state.pattern()
+      -- Check if the char matches any visible label
+      for _, m in ipairs(state.results) do
+        if m.label == char then
+          -- Label match found → jump
+          if state:jump(char) then
+            return false -- exit loop
+          end
+          break
+        end
+      end
+
+      -- No label match → extend search pattern
       local extended = state.pattern:extend(char)
-
-      -- Try extending the pattern without triggering check_jump
       state:update({ pattern = extended, check_jump = false })
-
-      if #state.results > 0 then
-        -- Matches found with extended pattern → continue searching
-        return -- nil → step() returns true → loop continues
-      end
-
-      -- No matches → revert to original and try char as label
-      state:update({ pattern = orig, check_jump = false, force = true })
-
-      if state:jump(char) then
-        return false -- jumped → exit loop
-      end
-
-      -- Neither extension nor label → reject input with visual feedback
-      flash_reject()
+      -- Continue loop even with 0 results (romaji mid-input like "lu")
     end
   end
   return actions
 end
 
 --- Jump with migemo-enhanced pattern matching.
---- Romaji input (a-z) is prioritized over label selection: labels are only
---- activated when the extended pattern yields no matches.
+--- When labels are visible, label characters trigger a jump; other characters
+--- extend the search pattern. Before labels appear (< min_pattern_length),
+--- all a-z input extends the search.
 ---@param opts? Flash.State.Config
 function M.jump(opts)
   local Repeat = require("flash.repeat")
