@@ -2,6 +2,10 @@ local M = {}
 
 ---@type string[]
 local DICT_CANDIDATES = {
+  -- User-local install (rustmigemo + oguna/yet-another-migemo-dict pattern).
+  -- Place migemo-compact-dict at this path to use rustmigemo without setting
+  -- dict_path explicitly.
+  vim.env.HOME .. "/.local/share/migemo/migemo-compact-dict",
   "/usr/share/cmigemo/utf-8/migemo-dict", -- Debian/Ubuntu
   "/usr/share/migemo/utf-8/migemo-dict", -- Arch/Manjaro
   "/opt/homebrew/share/migemo/utf-8/migemo-dict", -- macOS (Apple Silicon)
