@@ -1,14 +1,28 @@
 # cmigemo.nvim
 
-ローマ字入力で日本語テキストを検索できる Neovim プラグイン。バックエンドに [cmigemo](https://github.com/koron/cmigemo)（C実装）を使用。
+ローマ字入力で日本語テキストを検索できる Neovim プラグイン。バックエンドに [cmigemo](https://github.com/koron/cmigemo)（C実装）または [rustmigemo](https://github.com/oguna/rustmigemo)（Rust実装）を使用。
 
 `"nihongo"` と入力するだけで `にほんご`、`ニホンゴ`、`日本語` すべてにマッチします。
 
 ## 必要なもの
 
 - Neovim 0.10+
-- [cmigemo](https://github.com/koron/cmigemo) がインストール済みで PATH に通っていること
-- cmigemo 辞書（通常 cmigemo と一緒にインストールされます）
+- 次のいずれかのバックエンドが PATH に通っていること（インストール済みのものを自動検出します）
+  - [cmigemo](https://github.com/koron/cmigemo) ＋ cmigemo 辞書（通常 cmigemo と一緒にインストールされます）
+  - [rustmigemo](https://github.com/oguna/rustmigemo) ＋ `migemo-compact-dict`
+
+## バックエンド
+
+`cmigemo_cmd` 未指定時は `cmigemo` → `rustmigemo` の順に検出し、最初に見つかったものを使用します。明示する場合は `cmigemo_cmd = "rustmigemo"` のように指定します。
+
+辞書もバックエンドに応じて自動検出します。
+
+| バックエンド | 既定の辞書探索先 |
+|---|---|
+| cmigemo | `/usr/share/cmigemo/utf-8/migemo-dict` 等のプラットフォーム標準パス |
+| rustmigemo | `~/.local/share/migemo/migemo-compact-dict`（無ければ `migemo-dict`） |
+
+rustmigemo 辞書は [oguna/yet-another-migemo-dict](https://github.com/oguna/yet-another-migemo-dict) の `migemo-compact-dict` を上記パスへ配置してください。
 
 ## インストール
 
@@ -25,8 +39,8 @@
 
 ```lua
 require("cmigemo").setup({
-  cmigemo_cmd = "cmigemo",  -- cmigemo バイナリのパス（デフォルト: "cmigemo"）
-  dict_path = nil,           -- 辞書パス（デフォルト: 自動検出）
+  cmigemo_cmd = nil,         -- バックエンドのパス（デフォルト: cmigemo→rustmigemo の順で自動検出）
+  dict_path = nil,           -- 辞書パス（デフォルト: バックエンドに応じて自動検出）
   query_timeout = 200,       -- レスポンスタイムアウト（ms、デフォルト: 200）
 })
 ```
@@ -57,7 +71,7 @@ local pattern = require("cmigemo").query("kensaku", { rxop = "vim" })
 
 ### `require("cmigemo").is_available()`
 
-cmigemo バイナリと辞書が利用可能かチェックします。
+バックエンドのバイナリと辞書が利用可能かチェックします。
 
 **戻り値:** `boolean`
 
@@ -67,7 +81,7 @@ cmigemo バイナリと辞書が利用可能かチェックします。
 
 ## アーキテクチャ
 
-cmigemo.nvim は `cmigemo -q -d <dict>` を常駐プロセスとして起動し、stdin/stdout で通信します。プロセスは最初の `query()` 呼び出し時に遅延起動され、`VimLeavePre` で自動停止します。
+cmigemo.nvim はバックエンド（`cmigemo` または `rustmigemo`）を `<backend> -q -d <dict>` の常駐プロセスとして起動し、stdin/stdout で通信します（両バックエンドとも同じ引数・PCRE 形式出力に対応）。プロセスは最初の `query()` 呼び出し時に遅延起動され、`VimLeavePre` で自動停止します。
 
 ```
 lua/cmigemo/

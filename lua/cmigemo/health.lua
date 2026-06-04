@@ -3,32 +3,45 @@ local M = {}
 function M.check()
   vim.health.start("cmigemo.nvim")
 
-  -- 1. Check binary
+  -- 1. Check backend binary (cmigemo or rustmigemo)
   local cmigemo = require("cmigemo")
-  local cmd = "cmigemo"
-  if vim.fn.executable(cmd) == 1 then
-    local handle = io.popen(cmd .. " --version 2>&1")
-    local version = handle and handle:read("*l") or "unknown"
-    if handle then
-      handle:close()
-    end
-    vim.health.ok("cmigemo binary found: " .. cmd .. " (" .. (version or "unknown") .. ")")
-  else
-    vim.health.error("cmigemo binary not found", {
+  local cmd = cmigemo.resolved_cmd()
+  if not cmd then
+    vim.health.error("No migemo backend found (looked for: cmigemo, rustmigemo)", {
       "Install cmigemo: sudo apt install cmigemo (Debian/Ubuntu)",
       "Or: brew install cmigemo (macOS)",
+      "Or install rustmigemo and set cmigemo_cmd, e.g. mise/cargo install rustmigemo",
     })
     return
   end
 
+  local backend = cmigemo.backend()
+  if vim.fn.executable(cmd) == 1 then
+    -- rustmigemo has no --version flag; only probe the cmigemo C backend.
+    local version
+    if backend == "cmigemo" then
+      local handle = io.popen(cmd .. " --version 2>&1")
+      version = handle and handle:read("*l") or nil
+      if handle then
+        handle:close()
+      end
+    end
+    vim.health.ok(
+      ("%s backend found: %s%s"):format(backend, cmd, version and version ~= "" and (" (" .. version .. ")") or "")
+    )
+  else
+    vim.health.error("backend binary not found: " .. cmd)
+    return
+  end
+
   -- 2. Check dictionary
-  local dict = require("cmigemo.core.dict")
-  local dict_path = dict.detect()
+  local dict_path = cmigemo.dict_path()
   if dict_path then
     vim.health.ok("Dictionary found: " .. dict_path)
   else
     vim.health.error("Dictionary not found", {
-      "Ensure cmigemo dictionary is installed",
+      "Ensure a migemo dictionary is installed",
+      "rustmigemo: place migemo-compact-dict at ~/.local/share/migemo/",
       "Or specify dict_path in setup()",
     })
     return

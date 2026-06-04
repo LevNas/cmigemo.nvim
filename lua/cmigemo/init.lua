@@ -1,16 +1,49 @@
 local M = {}
 
 ---@class CmigemoConfig
----@field cmigemo_cmd? string  cmigemo binary path (default: "cmigemo")
+---@field cmigemo_cmd? string  backend binary path (default: auto-detect cmigemo, then rustmigemo)
 ---@field dict_path? string    dictionary path (default: auto-detect)
 ---@field query_timeout? number  response timeout in ms (default: 200)
 
 ---@type CmigemoConfig
 local config = {
-  cmigemo_cmd = "cmigemo",
+  cmigemo_cmd = nil,
   dict_path = nil,
   query_timeout = 200,
 }
+
+--- Backend binaries to probe when `cmigemo_cmd` is not set, in priority order.
+--- cmigemo first keeps existing setups unchanged; rustmigemo is a drop-in
+--- fallback (same `-q -d <dict>` interface and PCRE-style output).
+---@type string[]
+local CMD_CANDIDATES = { "cmigemo", "rustmigemo" }
+
+--- Resolve the backend command to run.
+---@return string|nil  binary name/path, or nil if none found
+local function resolve_cmd()
+  if config.cmigemo_cmd then
+    return config.cmigemo_cmd
+  end
+  for _, cmd in ipairs(CMD_CANDIDATES) do
+    if vim.fn.executable(cmd) == 1 then
+      return cmd
+    end
+  end
+  return nil
+end
+
+--- Infer the backend kind from a resolved command.
+---@param cmd? string
+---@return "cmigemo"|"rustmigemo"|nil
+local function backend_of(cmd)
+  if not cmd then
+    return nil
+  end
+  if cmd:match("rustmigemo") then
+    return "rustmigemo"
+  end
+  return "cmigemo"
+end
 
 ---@type CmigemoProcess|nil
 local process = nil
@@ -18,11 +51,12 @@ local process = nil
 ---@type boolean
 local setup_done = false
 
---- Resolve the dictionary path from config.
+--- Resolve the dictionary path for the given backend.
+---@param cmd? string  resolved backend command
 ---@return string|nil
-local function resolve_dict_path()
+local function resolve_dict_path(cmd)
   local dict = require("cmigemo.core.dict")
-  return dict.detect(config.dict_path)
+  return dict.detect(config.dict_path, backend_of(cmd))
 end
 
 --- Ensure the process is started. Returns true if ready.
@@ -32,13 +66,18 @@ local function ensure_process()
     return true
   end
 
-  local dict_path = resolve_dict_path()
+  local cmd = resolve_cmd()
+  if not cmd then
+    return false
+  end
+
+  local dict_path = resolve_dict_path(cmd)
   if not dict_path then
     return false
   end
 
   local Process = require("cmigemo.core.process").Process
-  process = Process.new(config.cmigemo_cmd, dict_path)
+  process = Process.new(cmd, dict_path)
   return process:start()
 end
 
@@ -151,13 +190,33 @@ function M.query(word, opts)
   return result
 end
 
---- Check if cmigemo is available (binary exists and dictionary found).
+--- Check if a backend is available (binary exists and dictionary found).
 ---@return boolean
 function M.is_available()
-  if vim.fn.executable(config.cmigemo_cmd) ~= 1 then
+  local cmd = resolve_cmd()
+  if not cmd or vim.fn.executable(cmd) ~= 1 then
     return false
   end
-  return resolve_dict_path() ~= nil
+  return resolve_dict_path(cmd) ~= nil
+end
+
+--- Resolve the backend command that would be used (cmigemo, rustmigemo, ...).
+--- Intended for diagnostics (e.g. :checkhealth).
+---@return string|nil
+function M.resolved_cmd()
+  return resolve_cmd()
+end
+
+--- The backend kind that would be used.
+---@return "cmigemo"|"rustmigemo"|nil
+function M.backend()
+  return backend_of(resolve_cmd())
+end
+
+--- The dictionary path that would be used for the resolved backend.
+---@return string|nil
+function M.dict_path()
+  return resolve_dict_path(resolve_cmd())
 end
 
 --- Stop the cmigemo process.
