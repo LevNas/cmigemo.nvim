@@ -384,6 +384,182 @@ function Compound:pattern(input)
   return whole, false
 end
 
+-- ============ MeCab reading mode (design log D10) ============
+
+--- Persistent mecab process, reused across jump sessions.
+---@type MecabProcess|nil
+local mecab_proc = nil
+
+--- Resolve (and cache) the mecab process, nil when the mode is unavailable.
+---@return MecabProcess|nil
+local function mecab_process()
+  local cmd = require("cmigemo").mecab_cmd()
+  if not cmd then
+    return nil
+  end
+  if not mecab_proc or mecab_proc.cmd ~= cmd then
+    if mecab_proc then
+      mecab_proc:stop()
+    end
+    mecab_proc = require("cmigemo.core.mecab").Mecab.new(cmd)
+  end
+  return mecab_proc
+end
+
+--- Per-jump reading session: window reading indexes + match memo.
+--- Matching ladder (D10): reading layer ∪ literal layer; migemo compound
+--- regex only when both found nothing (precision first, migemo as recall
+--- safety net for MeCab misreadings / alternate readings).
+---@class CmigemoReadingSession
+---@field mecab MecabProcess
+---@field index table<integer, {topline: integer, idx: table, lines: string[]}|false>
+---@field mcache table<string, table|false>
+local Reading = {}
+Reading.__index = Reading
+
+---@param proc MecabProcess
+---@return CmigemoReadingSession
+function Reading.new(proc)
+  return setmetatable({ mecab = proc, index = {}, mcache = {} }, Reading)
+end
+
+---@param win integer
+---@return {topline: integer, idx: table, lines: string[]}|nil
+function Reading:win_index(win)
+  local cached = self.index[win]
+  if cached ~= nil then
+    return cached or nil
+  end
+  local info = vim.api.nvim_win_is_valid(win) and vim.fn.getwininfo(win)[1] or nil
+  if not info then
+    self.index[win] = false
+    return nil
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  local lines = vim.api.nvim_buf_get_lines(buf, info.topline - 1, info.botline, false)
+  local idx = require("cmigemo.core.reading").build(self.mecab, lines, 500)
+  if not idx then
+    self.index[win] = false
+    return nil
+  end
+  local entry = { topline = info.topline, idx = idx, lines = lines }
+  self.index[win] = entry
+  return entry
+end
+
+--- All matches for `query` in `win` as {lnum (1-based), col, end_col (0-based
+--- byte, exclusive)} — reading ∪ literal, migemo compound as 0-hit fallback.
+---@param win integer
+---@param query string
+---@param skip_fallback? boolean  probe mode: reading+literal layers only
+---@return table[]
+function Reading:matches(win, query, skip_fallback)
+  local key = (skip_fallback and "p" or "f") .. win .. "\1" .. query
+  local hit = self.mcache[key]
+  if hit ~= nil then
+    return hit or {}
+  end
+  local out = {}
+  local entry = self:win_index(win)
+  if entry then
+    -- 1) reading layer
+    local kana, pending = require("cmigemo.core.romaji").to_kana(query)
+    if kana then
+      for _, m in ipairs(require("cmigemo.core.reading").match(entry.idx, kana, pending)) do
+        out[#out + 1] = { lnum = entry.topline + m.lnum - 1, col = m.col, end_col = m.end_col }
+      end
+    end
+    -- 2) literal layer (ASCII identifiers etc., case-insensitive)
+    local lq = query:lower()
+    for i, line in ipairs(entry.lines) do
+      local ll = line:lower()
+      local pos = 1
+      while true do
+        local s, e = ll:find(lq, pos, true)
+        if not s then
+          break
+        end
+        out[#out + 1] = { lnum = entry.topline + i - 1, col = s - 1, end_col = e }
+        pos = s + 1
+      end
+    end
+    -- 3) migemo compound fallback, only when the layers above found nothing
+    if #out == 0 and not skip_fallback and active_compound then
+      local pat, resolved = active_compound:pattern(query)
+      if pat and resolved then
+        local re = active_compound:regex(pat)
+        if re then
+          for i, line in ipairs(entry.lines) do
+            local off, guard = 0, 0
+            while off < #line and guard < 32 do
+              guard = guard + 1
+              local s, e = re:match_str(line:sub(off + 1))
+              if not s then
+                break
+              end
+              out[#out + 1] = { lnum = entry.topline + i - 1, col = off + s, end_col = off + e }
+              off = off + (e > s and e or s + 1)
+            end
+          end
+        end
+      end
+    end
+  end
+  self.mcache[key] = #out > 0 and out or false
+  return out
+end
+
+---@type CmigemoReadingSession|nil
+local active_reading = nil
+
+--- flash custom matcher for the reading mode.
+---@param win integer
+---@param state Flash.State
+---@return table[]
+local function reading_matcher(win, state)
+  if not active_reading then
+    return {}
+  end
+  local query = state.pattern()
+  if query == "" then
+    return {}
+  end
+  local matches = {}
+  for _, m in ipairs(active_reading:matches(win, query)) do
+    matches[#matches + 1] = {
+      win = win,
+      pos = { m.lnum, m.col },
+      end_pos = { m.lnum, math.max(m.col, m.end_col - 1) },
+    }
+  end
+  return matches
+end
+
+--- Internal: start/stop a reading session (used by M.jump and headless tests).
+---@return CmigemoReadingSession|nil
+function M._reading_start()
+  local proc = mecab_process()
+  if not proc then
+    return nil
+  end
+  active_reading = Reading.new(proc)
+  return active_reading
+end
+
+function M._reading_stop()
+  active_reading = nil
+end
+
+--- Internal: matcher reference / direct match access for tests.
+M._reading_matcher = reading_matcher
+
+---@param win integer
+---@param query string
+---@return table[]
+function M._reading_matches(win, query)
+  return active_reading and active_reading:matches(win, query) or {}
+end
+
 --- Compute label chars to exclude for the given query by one-char lookahead.
 --- A char is "hot" (excluded from labels) when `query .. char` still matches
 --- somewhere in the visible windows — i.e. pressing it is a meaningful search
@@ -395,6 +571,40 @@ end
 ---@param query string  the query the exclusion is computed for
 ---@return string  concatenated hot chars (flash `label.exclude` format)
 function M.lookahead_exclude(state, query)
+  if active_reading then
+    -- Reading mode: exact in-memory probe through the same matcher ladder,
+    -- so the hot/safe verdict is consistent with what the search shows.
+    local wins = (state.wins and #state.wins > 0) and state.wins
+      or { vim.api.nvim_get_current_win() }
+    local function count(q, skip_fallback)
+      local n = 0
+      for _, w in ipairs(wins) do
+        n = n + #active_reading:matches(w, q, skip_fallback)
+      end
+      return n
+    end
+    if count(query) == 0 then
+      return "" -- no matches → nothing gets labeled anyway
+    end
+    -- Probe cost gate: when the current query resolves in the reading /
+    -- literal layers, probing every char through the migemo fallback would
+    -- dominate keystroke cost (~6ms × 26) for continuations that are edge
+    -- cases at best — probe the cheap layers only. When the current query
+    -- itself lives in the fallback layer, probes must use it too.
+    local in_fallback = count(query, true) == 0
+    local pool = state.opts.labels or ""
+    local seen, hot = {}, {}
+    for i = 1, #pool do
+      local c = pool:sub(i, i)
+      if not seen[c] then
+        seen[c] = true
+        if count(query .. c, not in_fallback) > 0 then
+          hot[#hot + 1] = c
+        end
+      end
+    end
+    return table.concat(hot)
+  end
   if active_compound then
     -- Unresolved query → zero matches → nothing gets a label, so no
     -- exclusion is needed (and probing mid-states would be wasted work).
@@ -488,6 +698,11 @@ function M.jump(opts)
   M._compound_start(function()
     return visible_text(state)
   end)
+  -- Reading mode (D10): replace the regex search with the reading matcher
+  -- when mecab is available; the compound session stays as its fallback.
+  if M._reading_start() then
+    opts.matcher = reading_matcher
+  end
 
   state = Repeat.get_state("jump", opts)
 
@@ -496,6 +711,7 @@ function M.jump(opts)
     jump_on_max_length = false,
   })
   M._compound_stop()
+  M._reading_stop()
   if not ok then
     error(err)
   end

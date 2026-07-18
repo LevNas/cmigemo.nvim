@@ -64,7 +64,15 @@ function M.check()
   -- Clean up test process
   cmigemo.stop()
 
-  -- 5. Check budoux.lua (optional)
+  -- 5. Check mecab (optional, flash reading mode)
+  local mecab_cmd = cmigemo.mecab_cmd()
+  if mecab_cmd then
+    vim.health.ok("mecab found: " .. mecab_cmd .. " (flash reading mode enabled)")
+  else
+    vim.health.info("mecab is not installed (flash reading mode disabled, optional)")
+  end
+
+  -- 6. Check budoux.lua (optional)
   local budoux_ok, bunsetsu = pcall(require, "cmigemo.ext.bunsetsu")
   if budoux_ok and bunsetsu.is_available() then
     vim.health.ok("budoux.lua is available (bunsetsu jump enabled)")

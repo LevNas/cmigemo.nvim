@@ -24,6 +24,16 @@
 
 rustmigemo 辞書は [oguna/yet-another-migemo-dict](https://github.com/oguna/yet-another-migemo-dict) の `migemo-compact-dict` を上記パスへ配置してください（テキスト形式の `migemo-dict` は rustmigemo が読めず panic するため探索対象外です）。
 
+## 読みモード（MeCab、任意）
+
+[MeCab](https://taku910.github.io/mecab/) が PATH にある（または `mecab_cmd` で指定した）環境では、flash ジャンプの照合が**読みモード**に切り替わります。可視テキストを MeCab で読みに変換し、入力ローマ字をかな変換して読みへ直接前方一致させるため、辞書に無い複合語（生産性向上・記録する等）も語境界を越えて確実にマッチします。照合は3層構成です：
+
+1. 読み照合（形態素境界起点・形態素跨ぎ自由）
+2. リテラル照合（ASCII 識別子など、常時併用）
+3. migemo 照合（上2層が0件のときのみ。MeCab の誤読・別読みを回収）
+
+MeCab が無い環境では従来どおり migemo のみで動作します（機能後退なし）。
+
 ## インストール
 
 ### lazy.nvim

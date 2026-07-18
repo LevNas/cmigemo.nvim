@@ -4,12 +4,15 @@ local M = {}
 ---@field cmigemo_cmd? string  backend binary path (default: auto-detect cmigemo, then rustmigemo)
 ---@field dict_path? string    dictionary path (default: auto-detect)
 ---@field query_timeout? number  response timeout in ms (default: 200)
+---@field mecab_cmd? string  mecab binary for the flash reading mode
+---        (default: auto-detect "mecab"; unresolvable disables the mode)
 
 ---@type CmigemoConfig
 local config = {
   cmigemo_cmd = nil,
   dict_path = nil,
   query_timeout = 200,
+  mecab_cmd = nil,
 }
 
 --- Backend binaries to probe when `cmigemo_cmd` is not set, in priority order.
@@ -220,6 +223,18 @@ end
 ---@return string|nil
 function M.dict_path()
   return resolve_dict_path(resolve_cmd())
+end
+
+--- Resolve the mecab command for the reading mode (nil = mode disabled).
+---@return string|nil
+function M.mecab_cmd()
+  if config.mecab_cmd then
+    return config.mecab_cmd
+  end
+  if vim.fn.executable("mecab") == 1 then
+    return "mecab"
+  end
+  return nil
 end
 
 --- Stop the cmigemo process.
