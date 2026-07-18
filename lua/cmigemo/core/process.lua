@@ -96,6 +96,10 @@ function Process:query(word, timeout)
   end, 5)
 
   if not got_result then
+    -- Timeout: the reply may still arrive later and would be misread as the
+    -- NEXT query's result (request/response desync on the shared pipe).
+    -- Restart the process so the pipe returns to lockstep.
+    self:stop()
     return nil
   end
 
