@@ -56,7 +56,7 @@ local setup_done = false
 ---@return string|nil
 local function resolve_dict_path(cmd)
   local dict = require("cmigemo.core.dict")
-  return dict.detect(config.dict_path, backend_of(cmd))
+  return dict.detect(config.dict_path, backend_of(cmd), cmd)
 end
 
 --- Ensure the process is started. Returns true if ready.

@@ -19,10 +19,10 @@
 
 | バックエンド | 既定の辞書探索先 |
 |---|---|
-| cmigemo | `/usr/share/cmigemo/utf-8/migemo-dict` 等のプラットフォーム標準パス |
-| rustmigemo | `~/.local/share/migemo/migemo-compact-dict`（無ければ `migemo-dict`） |
+| cmigemo | バイナリの install prefix 直下（`<prefix>/share/{migemo,cmigemo}/utf-8/migemo-dict`。symlink 解決済みのため Nix / home-manager / Homebrew の profile 経由でも到達）→ `/usr/share/cmigemo/utf-8/migemo-dict` 等のプラットフォーム標準パス |
+| rustmigemo | `~/.local/share/migemo/migemo-compact-dict` |
 
-rustmigemo 辞書は [oguna/yet-another-migemo-dict](https://github.com/oguna/yet-another-migemo-dict) の `migemo-compact-dict` を上記パスへ配置してください。
+rustmigemo 辞書は [oguna/yet-another-migemo-dict](https://github.com/oguna/yet-another-migemo-dict) の `migemo-compact-dict` を上記パスへ配置してください（テキスト形式の `migemo-dict` は rustmigemo が読めず panic するため探索対象外です）。
 
 ## インストール
 
