@@ -100,7 +100,10 @@ end
 ---@field rxop? "pcre"|"vim"  regex format (default: "pcre")
 
 --- Convert PCRE-style regex to Vim magic mode.
---- Escapes (, ), | with backslash outside character classes.
+--- Groups become NON-capturing \%(...\): Vim allows at most 9 capturing
+--- groups (E872), which group-rich migemo patterns exceed as soon as
+--- several are concatenated (compound segmentation). No caller uses
+--- backreferences, so capturing is never needed.
 ---@param pcre string
 ---@return string
 local function pcre_to_vim_magic(pcre)
@@ -124,7 +127,7 @@ local function pcre_to_vim_magic(pcre)
         in_class = true
         parts[#parts + 1] = "["
       elseif b == 40 then -- (
-        parts[#parts + 1] = "\\("
+        parts[#parts + 1] = "\\%("
       elseif b == 41 then -- )
         parts[#parts + 1] = "\\)"
       elseif b == 124 then -- |
