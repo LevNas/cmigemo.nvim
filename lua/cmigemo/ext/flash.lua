@@ -692,14 +692,17 @@ function M.jump(opts)
     {
       label = {
         min_pattern_length = 1,
-        -- Label overlays the FIRST matched char (same rendering as the
-        -- bunsetsu jump) instead of the char after the match: the after
-        -- position hides upcoming text the user still reads while typing.
-        -- Per-match label positions (e.g. head of the match's last
-        -- bunsetsu) are not supported by flash's highlighter — labels
-        -- render only at match.pos/end_pos with a state-global offset —
-        -- so that variant would need fragile self-managed extmarks.
-        before = { 0, 0 },
+        -- Label overlays the char one cell LEFT of the match head
+        -- (before = true → {0, -1}, char-wise and multibyte-aware), so the
+        -- matched text itself stays fully visible. flash clamps the offset
+        -- at column 0 (util.offset_pos), so line-head matches gracefully
+        -- fall back to overlaying the first matched char. The after
+        -- position was rejected for hiding upcoming text; per-match label
+        -- positions (e.g. head of the match's last bunsetsu) are not
+        -- supported by flash's highlighter — labels render only at
+        -- match.pos/end_pos with a state-global offset — so that variant
+        -- would need fragile self-managed extmarks.
+        before = true,
         after = false,
       },
     },
