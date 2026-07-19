@@ -689,7 +689,20 @@ function M.jump(opts)
 
   opts = vim.tbl_deep_extend(
     "force",
-    { label = { min_pattern_length = 1 } },
+    {
+      label = {
+        min_pattern_length = 1,
+        -- Label overlays the FIRST matched char (same rendering as the
+        -- bunsetsu jump) instead of the char after the match: the after
+        -- position hides upcoming text the user still reads while typing.
+        -- Per-match label positions (e.g. head of the match's last
+        -- bunsetsu) are not supported by flash's highlighter — labels
+        -- render only at match.pos/end_pos with a state-global offset —
+        -- so that variant would need fragile self-managed extmarks.
+        before = { 0, 0 },
+        after = false,
+      },
+    },
     opts or {},
     { search = { mode = M.migemo_mode() } }
   )
