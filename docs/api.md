@@ -73,7 +73,7 @@ lua/cmigemo/
 │   ├── romaji.lua     -- ローマ字→カタカナ変換 (読みモードのクエリ変換)
 │   └── reading.lua    -- 読みインデックス構築と前方一致照合
 └── ext/
-    ├── flash.lua      -- flash.nvim 連携 (migemo/読みジャンプ、先読みラベル、compound 分節)
+    ├── flash.lua      -- flash.nvim 連携 (migemo/読みジャンプ、remote/treesitter 検索、先読みラベル、compound 分節)
     ├── snacks.lua     -- snacks.nvim picker 連携 (grep migemo)
     └── bunsetsu.lua   -- BudouX による文節分割
 examples/

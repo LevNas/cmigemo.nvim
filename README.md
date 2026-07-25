@@ -3,7 +3,7 @@
 ローマ字入力で日本語テキストを検索できる Neovim プラグイン。`"nihongo"` と入力するだけで `にほんご`、`ニホンゴ`、`日本語` すべてにマッチします。
 
 - **migemo 変換 API** — ローマ字を日本語対応の正規表現（PCRE / Vim magic）へ変換。ripgrep・Vim 検索・各種プラグインから利用可能
-- **flash.nvim 連携ジャンプ** — ローマ字入力で日本語へラベルジャンプ。ラベルと入力が衝突しない先読み割当、複合語への継続入力、MeCab があれば読みベースの高精度照合（読みモード）
+- **flash.nvim 連携ジャンプ** — ローマ字入力で日本語へラベルジャンプ。ラベルと入力が衝突しない先読み割当、複合語への継続入力、MeCab があれば読みベースの高精度照合（読みモード）。オペレータからのリモート操作・treesitter 検索も migemo 入力に対応
 - **snacks.nvim picker 連携** — migemo grep
 - **文節ジャンプ** — BudouX による文節境界へのジャンプ
 
@@ -30,15 +30,17 @@ lazy.nvim:
 
 ### flash.nvim — ローマ字で日本語へジャンプ
 
-`f` を押してローマ字を打つと日本語のマッチが絞り込まれ、ラベルキーでジャンプします（完全版: [examples/flash.lua](examples/flash.lua)）。
+`s` を押してローマ字を打つと日本語のマッチが絞り込まれ、ラベルキーでジャンプします。オペレータ待ちの `r`（リモート操作）や `R`（treesitter 検索）も migemo 入力で使えます。完全版（flash 標準の `s` / `S` / `r` / `R` / `<c-s>` 配置 + 文節ジャンプ `gb`、低スペック端末向けの軽量化設定込み）は [examples/flash.lua](examples/flash.lua)。
 
 ```lua
 {
   "folke/flash.nvim",
   dependencies = { "LevNas/cmigemo.nvim" },
   keys = {
-    { "f", function() require("cmigemo.ext.flash").jump() end,
+    { "s", function() require("cmigemo.ext.flash").jump() end,
       mode = { "n", "x", "o" }, desc = "Flash: Migemo Jump" },
+    { "r", function() require("cmigemo.ext.flash").remote() end,
+      mode = "o", desc = "Flash: Migemo Remote" },
   },
 }
 ```
@@ -57,7 +59,7 @@ end
 ## ドキュメント
 
 - [docs/backends.md](docs/backends.md) — バックエンドと辞書の自動検出
-- [docs/flash.md](docs/flash.md) — flash ジャンプの挙動（先読みラベル・compound 分節・読みモード・文節ジャンプ）
+- [docs/flash.md](docs/flash.md) — flash ジャンプの挙動（先読みラベル・compound 分節・読みモード・リモート操作 / treesitter 検索・文節ジャンプ）
 - [docs/api.md](docs/api.md) — セットアップ・API・アーキテクチャ・ヘルスチェック
 
 ## 謝辞
