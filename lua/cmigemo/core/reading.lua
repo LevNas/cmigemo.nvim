@@ -16,6 +16,15 @@ local function chars_of(s)
   return vim.fn.split(s, "\\zs")
 end
 
+--- Unknown words carry no reading feature (e.g. loanwords missing from the
+--- 2007-era ipadic, like スマートフォン), which breaks the reading stream
+--- even though a katakana surface reads as itself. Worse, the same word can
+--- tokenize differently by context (unknown here, split into known
+--- morphemes there), so one partial hit masks the 0-hit migemo fallback
+--- and the unknown occurrence silently drops out of the matches.
+--- Synthesize the reading for pure-katakana surfaces instead.
+local katakana_surface = vim.regex("^[ァ-ヶー]\\+$")
+
 --- Build the index for a list of lines.
 ---@param mecab MecabProcess
 ---@param lines string[]
@@ -30,7 +39,11 @@ function M.build(mecab, lines, timeout)
     end
     local entry = {}
     for _, m in ipairs(ms) do
-      local chars = m.reading and chars_of(m.reading) or nil
+      local reading = m.reading
+      if not reading and katakana_surface:match_str(m.surface) then
+        reading = m.surface
+      end
+      local chars = reading and chars_of(reading) or nil
       entry[#entry + 1] = {
         surface = m.surface,
         col = m.col,
