@@ -47,6 +47,18 @@ MeCab が無い環境では従来どおり migemo（+compound 分節）で動作
 - 長音「ー」は母音クエリ文字に緩く一致します（コンピューター等の外来語対応）
 - 読みが取れない形態素（記号・数値・未知語）は読みストリームを分断します
 
+## リモート操作と treesitter 検索
+
+`jump()` と同じローマ字入力・ラベル非衝突の仕組みで、flash の remote / treesitter_search に対応する関数を提供します。
+
+- `require("cmigemo.ext.flash").remote()` — オペレータ待ちモードで使うリモートジャンプ（例: `yr` → ローマ字入力 → ラベル選択 → `iw` 等のモーション → 元位置へ自動復帰）。flash の remote モードは「remote_op 設定を被せた通常ジャンプ」なので、migemo ジャンプの全機能（compound 分節・読みモード含む）がそのまま使えます
+- `require("cmigemo.ext.flash").treesitter_search()` — クエリ入力でマッチ位置を検索し、それを包含する treesitter ノード群にラベルを付けて選択します（例: `dR` 相当）。マッチは migemo（compound 分節）で解決されます
+
+### 制約
+
+- `treesitter_search()` は正規表現検索を包む matcher 構成のため、**読みモード（MeCab）は使われません**（migemo 層のみ）。読みモードでしかマッチしないクエリはヒットしません
+- 対象バッファに treesitter パーサが必要です（無いウィンドウは検索対象から除外されます）
+
 ## 文節ジャンプ
 
 `require("cmigemo.ext.flash").bunsetsu()` は [budoux.lua](https://github.com/atusy/budoux.lua) による文節境界をジャンプ対象として列挙します（クエリ入力なし、`;` / `,` で次/前へ移動、ラベルまたは `<CR>` で確定）。`group_size` で何文節をひとまとまりにするか指定できます（既定: 2）。

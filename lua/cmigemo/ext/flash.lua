@@ -747,6 +747,75 @@ function M._compound_stop()
   active_compound = nil
 end
 
+--- Remote migemo jump: use in operator-pending mode (e.g. `yr`).
+--- flash's remote mode is plain jump options (remote_op restore/motion), so
+--- the migemo jump gains the operator replay + cursor restore for free.
+--- The mode field is left for State.new (Config.get) to resolve: it slots
+--- modes.remote BEFORE these opts, so the migemo label tuning in M.jump
+--- survives. Pre-resolving here would bake flash's global label defaults
+--- over it instead.
+---@param opts? Flash.State.Config
+function M.remote(opts)
+  return M.jump(vim.tbl_deep_extend("force", { mode = "remote" }, opts or {}))
+end
+
+--- Migemo-enhanced treesitter search (flash treesitter_search + romaji
+--- input). Search matches come from the migemo compound layer; the MeCab
+--- reading matcher is not used because this mode's matcher wraps flash's
+--- regex search to collect the treesitter nodes covering each match.
+--- Label/input non-collision works unchanged: the labeler reads
+--- label.exclude regardless of which matcher produced the matches.
+---@param opts? Flash.State.Config
+function M.treesitter_search(opts)
+  local Config = require("flash.config")
+  local Repeat = require("flash.repeat")
+  local Util = require("flash.util")
+
+  opts = Config.get({ mode = "treesitter_search" }, opts, {
+    -- same matcher as flash.plugins.treesitter.search (not exported there):
+    -- regex matches stay unlabeled, their covering nodes get the labels
+    matcher = function(win, _state, _opts)
+      local search = require("flash.search").new(win, _state)
+      local matches = {} ---@type Flash.Match[]
+      for _, m in ipairs(search:get(_opts)) do
+        m.label = false
+        table.insert(matches, m)
+        for _, n in ipairs(require("flash.plugins.treesitter").get_nodes(win, m.pos)) do
+          n.highlight = false
+          table.insert(matches, n)
+        end
+      end
+      return matches
+    end,
+    jump = { pos = "range" },
+    search = { mode = M.migemo_mode() },
+  })
+
+  opts.search.exclude = vim.deepcopy(opts.search.exclude)
+  table.insert(opts.search.exclude, function(win)
+    local buf = vim.api.nvim_win_get_buf(win)
+    return not pcall(vim.treesitter.get_parser, buf)
+  end)
+
+  local state
+  M._compound_start(function()
+    return visible_text(state)
+  end)
+  state = Repeat.get_state("treesitter-search", opts)
+  local ok, err = pcall(state.loop, state, {
+    abort = function()
+      Util.exit()
+    end,
+    actions = romaji_actions(state.opts.label.exclude or ""),
+    jump_on_max_length = false,
+  })
+  M._compound_stop()
+  if not ok then
+    error(err)
+  end
+  return state
+end
+
 --- Jump to bunsetsu (phrase) boundaries using BudouX segmenter.
 ---@param opts? Flash.State.Config
 ---@param group_size? number 何文節をひとまとまりにするか (default: 2)
